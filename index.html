@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeviceHub - 设备管理平台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        display: ['Space Grotesk', 'sans-serif'],
+                        body: ['Noto Sans SC', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --bg: #0c0e14;
+            --bg-secondary: #12151e;
+            --card: #181c28;
+            --card-hover: #1e2233;
+            --border: #252a3a;
+            --border-light: #2f3548;
+            --fg: #e8eaf0;
+            --fg-muted: #7c829a;
+            --fg-dim: #4a5068;
+            --accent: #00d4aa;
+            --accent-dim: rgba(0,212,170,0.12);
+            --accent-glow: rgba(0,212,170,0.25);
+            --danger: #ff4d6a;
+            --danger-dim: rgba(255,77,106,0.12);
+            --warning: #ffb020;
+            --warning-dim: rgba(255,176,32,0.12);
+            --info: #3b9eff;
+            --info-dim: rgba(59,158,255,0.12);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { font-size: 14px; }
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
+
+        /* 侧边栏 */
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            transition: width 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+        .nav-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 16px; border-radius: 10px;
+            color: var(--fg-muted); cursor: pointer;
+            transition: all 0.2s ease; position: relative;
+            font-size: 13.5px; font-weight: 500;
+        }
+        .nav-item:hover { color: var(--fg); background: rgba(255,255,255,0.04); }
+        .nav-item.active {
+            color: var(--accent); background: var(--accent-dim);
+        }
+        .nav-item.active::before {
+            content: ''; position: absolute; left: -12px; top: 50%; transform: translateY(-50%);
+            width: 3px; height: 20px; background: var(--accent); border-radius: 0 4px 4px 0;
+        }
+        .nav-item i { width: 20px; text-align: center; font-size: 15px; }
+
+        /* 卡片 */
+        .stat-card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 14px; padding: 20px 22px;
+            transition: all 0.3s ease; position: relative; overflow: hidden;
+        }
+        .stat-card::after {
+            content: ''; position: absolute; top: 0; right: 0;
+            width: 120px; height: 120px; border-radius: 50%;
+            filter: blur(50px); opacity: 0.08; pointer-events: none;
+        }
+        .stat-card:hover { border-color: var(--border-light); transform: translateY(-2px); }
+
+        /* 表格 */
+        .data-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        .data-table thead th {
+            padding: 12px 16px; text-align: left; font-size: 12px;
+            font-weight: 600; color: var(--fg-dim); text-transform: uppercase;
+            letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; background: var(--card); z-index: 2;
+        }
+        .data-table tbody tr {
+            transition: background 0.15s ease; cursor: pointer;
+        }
+        .data-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+        .data-table tbody td {
+            padding: 14px 16px; border-bottom: 1px solid rgba(37,42,58,0.5);
+            font-size: 13px;
+        }
+
+        /* 状态标签 */
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500;
+        }
+        .status-badge .dot {
+            width: 6px; height: 6px; border-radius: 50%;
+        }
+        .status-online { background: var(--accent-dim); color: var(--accent); }
+        .status-online .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+        .status-offline { background: rgba(124,130,154,0.12); color: var(--fg-muted); }
+        .status-offline .dot { background: var(--fg-muted); }
+        .status-maintenance { background: var(--warning-dim); color: var(--warning); }
+        .status-maintenance .dot { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+        .status-fault { background: var(--danger-dim); color: var(--danger); }
+        .status-fault .dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); animation: pulse-dot 1.5s infinite; }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* 按钮 */
+        .btn-primary {
+            background: var(--accent); color: #0c0e14; font-weight: 600;
+            padding: 9px 20px; border-radius: 10px; border: none; cursor: pointer;
+            font-size: 13px; transition: all 0.2s ease; display: inline-flex;
+            align-items: center; gap: 8px; font-family: inherit;
+        }
+        .btn-primary:hover { box-shadow: 0 0 20px var(--accent-glow); transform: translateY(-1px); }
+        .btn-secondary {
+            background: rgba(255,255,255,0.06); color: var(--fg); font-weight: 500;
+            padding: 9px 20px; border-radius: 10px; border: 1px solid var(--border);
+            cursor: pointer; font-size: 13px; transition: all 0.2s ease;
+            display: inline-flex; align-items: center; gap: 8px; font-family: inherit;
+        }
+        .btn-secondary:hover { border-color: var(--border-light); background: rgba(255,255,255,0.08); }
+        .btn-danger {
+            background: var(--danger-dim); color: var(--danger); font-weight: 500;
+            padding: 9px 20px; border-radius: 10px; border: 1px solid rgba(255,77,106,0.2);
+            cursor: pointer; font-size: 13px; transition: all 0.2s ease;
+            display: inline-flex; align-items: center; gap: 8px; font-family: inherit;
+        }
+        .btn-danger:hover { background: rgba(255,77,106,0.2); }
+
+        /* 输入框 */
+        .form-input {
+            width: 100%; padding: 10px 14px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--bg-secondary);
+            color: var(--fg); font-size: 13px; font-family: inherit;
+            transition: border-color 0.2s ease; outline: none;
+        }
+        .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+        .form-input::placeholder { color: var(--fg-dim); }
+        .form-select {
+            width: 100%; padding: 10px 14px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--bg-secondary);
+            color: var(--fg); font-size: 13px; font-family: inherit;
+            transition: border-color 0.2s ease; outline: none; appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c829a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 12px center;
+        }
+        .form-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+        /* 模态框 */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px); z-index: 100;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: all; }
+        .modal-content {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 16px; width: 560px; max-height: 85vh;
+            overflow-y: auto; transform: scale(0.95) translateY(10px);
+            transition: transform 0.25s ease;
+        }
+        .modal-overlay.active .modal-content { transform: scale(1) translateY(0); }
+
+        /* 侧滑面板 */
+        .slide-panel {
+            position: fixed; top: 0; right: 0; bottom: 0; width: 480px;
+            background: var(--card); border-left: 1px solid var(--border);
+            z-index: 90; transform: translateX(100%);
+            transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+            overflow-y: auto;
+        }
+        .slide-panel.active { transform: translateX(0); }
+        .slide-panel-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+            z-index: 89; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .slide-panel-overlay.active { opacity: 1; pointer-events: all; }
+
+        /* Toast */
+        .toast-container {
+            position: fixed; top: 20px; right: 20px; z-index: 200;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .toast {
+            padding: 12px 20px; border-radius: 10px; font-size: 13px;
+            font-weight: 500; display: flex; align-items: center; gap: 10px;
+            animation: toast-in 0.3s ease forwards;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+        }
+        .toast-success { background: #0d2e24; border: 1px solid rgba(0,212,170,0.3); color: var(--accent); }
+        .toast-error { background: #2e0d16; border: 1px solid rgba(255,77,106,0.3); color: var(--danger); }
+        .toast-info { background: #0d1a2e; border: 1px solid rgba(59,158,255,0.3); color: var(--info); }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateX(40px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* 进度条 */
+        .usage-bar {
+            height: 4px; border-radius: 2px; background: rgba(255,255,255,0.06);
+            overflow: hidden;
+        }
+        .usage-bar-fill {
+            height: 100%; border-radius: 2px; transition: width 0.6s ease;
+        }
+
+        /* 告警卡片 */
+        .alert-card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 16px 18px;
+            transition: all 0.2s ease; border-left: 3px solid transparent;
+        }
+        .alert-card:hover { background: var(--card-hover); }
+        .alert-critical { border-left-color: var(--danger); }
+        .alert-warning { border-left-color: var(--warning); }
+        .alert-info { border-left-color: var(--info); }
+
+        /* 背景装饰 */
+        .bg-glow {
+            position: fixed; width: 400px; height: 400px; border-radius: 50%;
+            filter: blur(120px); opacity: 0.04; pointer-events: none; z-index: 0;
+        }
+
+        /* 搜索框 */
+        .search-box {
+            position: relative; display: flex; align-items: center;
+        }
+        .search-box i {
+            position: absolute; left: 12px; color: var(--fg-dim); font-size: 13px;
+        }
+        .search-box input {
+            padding-left: 36px;
+        }
+
+        /* 动画 */
+        .fade-in { animation: fadeIn 0.4s ease forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .stagger-1 { animation-delay: 0.05s; opacity: 0; }
+        .stagger-2 { animation-delay: 0.1s; opacity: 0; }
+        .stagger-3 { animation-delay: 0.15s; opacity: 0; }
+        .stagger-4 { animation-delay: 0.2s; opacity: 0; }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .slide-panel { width: 100%; }
+            .modal-content { width: 95%; margin: 0 10px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 背景装饰 -->
+    <div class="bg-glow" style="top: -100px; left: -100px; background: var(--accent);"></div>
+    <div class="bg-glow" style="bottom: -150px; right: -100px; background: var(--info);"></div>
+
+    <!-- Toast 容器 -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- 主布局 -->
+    <div class="flex h-screen relative z-10">
+        <!-- 侧边栏 -->
+        <aside class="sidebar w-[220px] flex-shrink-0 flex flex-col p-3">
+            <!-- Logo -->
+            <div class="flex items-center gap-3 px-3 py-4 mb-4">
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background: var(--accent-dim);">
+                    <i class="fas fa-microchip" style="color: var(--accent); font-size: 16px;"></i>
+                </div>
+                <div>
+                    <div class="font-display font-bold text-base tracking-tight" style="color: var(--fg);">DeviceHub</div>
+                    <div class="text-[10px] font-medium" style="color: var(--fg-dim);">设备管理平台</div>
+                </div>
+            </div>
+
+            <!-- 导航 -->
+            <nav class="flex flex-col gap-1 flex-1">
+                <div class="px-3 py-2 text-[10px] font-semibold tracking-widest uppercase" style="color: var(--fg-dim);">主菜单</div>
+                <div class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')">
+                    <i class="fas fa-chart-pie"></i><span>控制台</span>
+                </div>
+                <div class="nav-item" data-page="devices" onclick="switchPage('devices')">
+                    <i class="fas fa-server"></i><span>设备管理</span>
+                </div>
+                <div class="nav-item" data-page="alerts" onclick="switchPage('alerts')">
+                    <i class="fas fa-bell"></i><span>告警中心</span>
+                    <span id="alertBadge" class="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-full" style="background: var(--danger); color: #fff; display: none;">0</span>
+                </div>
+
+                <div class="px-3 py-2 mt-4 text-[10px] font-semibold tracking-widest uppercase" style="color: var(--fg-dim);">系统</div>
+                <div class="nav-item" data-page="topology" onclick="switchPage('topology')">
+                    <i class="fas fa-project-diagram"></i><span>拓扑视图</span>
+                </div>
+                <div class="nav-item" data-page="settings" onclick="switchPage('settings')">
+                    <i class="fas fa-cog"></i><span>系统设置</span>
+                </div>
+            </nav>
+
+            <!-- 底部用户信息 -->
+            <div class="mt-auto pt-3 border-t" style="border-color: var(--border);">
+                <div class="flex items-center gap-3 px-3 py-2">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style="background: linear-gradient(135deg, var(--accent), #00a88a); color: #0c0e14;">管</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs font-semibold truncate" style="color: var(--fg);">系统管理员</div>
+                        <div class="text-[11px]" style="color: var(--fg-dim);">admin@devicehub.io</div>
+                    </div>
+                    <i class="fas fa-right-from-bracket text-xs cursor-pointer" style="color: var(--fg-dim);" title="退出登录"></i>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <!-- 顶部栏 -->
+            <header class="flex items-center justify-between px-6 py-3 border-b flex-shrink-0" style="border-color: var(--border); background: var(--bg-secondary);">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" class="form-input w-[280px]" placeholder="搜索设备名称、IP、编号..." id="globalSearch" oninput="handleGlobalSearch(this.value)">
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-xs" style="color: var(--fg-dim);" id="currentTime"></div>
+                    <div class="relative cursor-pointer p-2 rounded-lg transition-colors" style="color: var(--fg-muted);" onmouseenter="this.style.background='rgba(255,255,255,0.05)'" onmouseleave="this.style.background='transparent'" onclick="switchPage('alerts')">
+                        <i class="fas fa-bell text-sm"></i>
+                        <span id="headerAlertDot" class="absolute top-1 right-1 w-2 h-2 rounded-full" style="background: var(--danger); display: none;"></span>
+                    </div>
+                    <button class="btn-primary text-xs" onclick="openAddDeviceModal()">
+                        <i class="fas fa-plus"></i>添加设备
+                    </button>
+                </div>
+            </header>
+
+            <!-- 内容区域 -->
+            <div class="flex-1 overflow-y-auto p-6" id="contentArea">
+                <!-- 由 JS 动态渲染 -->
+            </div>
+        </main>
+    </div>
+
+    <!-- 添加/编辑设备模态框 -->
+    <div class="modal-overlay" id="deviceModal">
+        <div class="modal-content">
+            <div class="flex items-center justify-between p-5 border-b" style="border-color: var(--border);">
+                <h3 class="font-display font-bold text-base" id="modalTitle">添加设备</h3>
+                <button onclick="closeDeviceModal()" class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors" style="color: var(--fg-muted);" onmouseenter="this.style.background='rgba(255,255,255,0.05)'" onmouseleave="this.style.background='transparent'">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="deviceForm" onsubmit="handleDeviceSubmit(event)" class="p-5 space-y-4">
+                <input type="hidden" id="formDeviceId">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold mb-1.5" style="color: var(--fg-muted);">设备名称 <span style="color: var(--danger);">*</span></label>
+                        <input type="text" class="form-input" id="formName" placeholder="例：主数据库服务器" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1.5" style="color: var(--fg-muted);">设备类型 <span style="color: var(--danger);">*</span></label>
+                        <select class="form-select" id="formType" required>
+                            <option value="">请选择</option>
+                            <option value="服务器">服务器</option>
+                            <option value="网络设备">网络设备</option>
+                            <option value="终端设备">终端设备</option>
+                            <option value="存储设备">存储设备</option>
+                            <option value="安全设备">安全设备</option>
+                            <option value="IoT设备">IoT设备</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold mb-1.5" style="color: var(--fg-muted);">IP 地址</label>
+                        <input type="text" class="form-input" id="formIP" placeholder="192.168.1.10">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1.5" style="color: var(--fg-muted);">设备状态</label>
+                        <select class="form-select" id="formStatus">
+                            <option value="online">在线</option>
+                            <option value="offline">离线</option>
+                            <option value="maintenance">维护中</option>
+                            <option value="fault">故障</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold mb-1.5" style="color: var(--fg-muted);">安装位置</label>
+                    <input type="text" class="form-input" id="formLocation" placeholder="例：A栋3层机房">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold mb-1.5" style="color: var(--fg-muted);">负责人</label>
+                        <input type="text" class="form-input" id="formResponsible" placeholder="姓名">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1.5" style="color: var(--fg-muted);">购入日期</label>
+                        <input type="date" class="form-input" id="formPurchaseDate">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold mb-1.5" style="color: var(--fg-muted);">备注</label>
+                    <textarea class="form-input" id="formRemark" rows="2" placeholder="可选，填写设备备注信息"></textarea>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" class="btn-secondary" onclick="closeDeviceModal()">取消</button>
+                    <button type="submit" class="btn-primary" id="formSubmitBtn">确认添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 删除确认模态框 -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal-content" style="width: 400px;">
+            <div class="p-6 text-center">
+                <div class="w-14 h-14 rounded-full mx-auto mb-4 flex items-center justify-center" style="background: var(--danger-dim);">
+                    <i class="fas fa-trash-alt text-lg" style="color: var(--danger);"></i>
+                </div>
+                <h3 class="font-display font-bold text-base mb-2">确认删除</h3>
+                <p class="text-xs mb-6" style="color: var(--fg-muted);" id="deleteConfirmText">确定要删除该设备吗？此操作不可恢复。</p>
+                <div class="flex justify-center gap-3">
+                    <button class="btn-secondary" onclick="closeDeleteModal()">取消</button>
+                    <button class="btn-danger" onclick="confirmDelete()" id="deleteConfirmBtn">确认删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设备详情侧滑面板 -->
+    <div class="slide-panel-overlay" id="detailOverlay" onclick="closeDetailPanel()"></div>
+    <div class="slide-panel" id="detailPanel">
+        <div class="sticky top-0 z-10 flex items-center justify-between p-5 border-b" style="border-color: var(--border); background: var(--card);">
+            <h3 class="font-display font-bold text-base">设备详情</h3>
+            <div class="flex items-center gap-2">
+                <button class="btn-secondary text-xs py-2 px-3" onclick="editDeviceFromDetail()" id="detailEditBtn">
+                    <i class="fas fa-pen"></i>编辑
+                </button>
+                <button onclick="closeDetailPanel()" class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors" style="color: var(--fg-muted);" onmouseenter="this.style.background='rgba(255,255,255,0.05)'" onmouseleave="this.style.background='transparent'">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div id="detailContent" class="p-5">
+            <!-- 由 JS 动态渲染 -->
+        </div>
+    </div>
+
+    <script>
+    // ==================== 数据 ====================
+    let devices = [
+        { id: 'DEV-0001', name: '主数据库服务器', type: '服务器', status: 'online', ip: '192.168.1.10', location: 'A栋3层机房', cpu: 45, memory: 62, disk: 71, responsible: '张明', purchaseDate: '2023-03-15', warrantyDate: '2026-03-15', remark: '承载核心业务数据库，已做双机热备' },
+        { id: 'DEV-0002', name: '应用服务器-A', type: '服务器', status: 'online', ip: '192.168.1.11', location: 'A栋3层机房', cpu: 38, memory: 55, disk: 42, responsible: '张明', purchaseDate: '2023-03-15', warrantyDate: '2026-03-15', remark: '运行微服务集群' },
+        { id: 'DEV-0003', name: '应用服务器-B', type: '服务器', status: 'maintenance', ip: '192.168.1.12', location: 'A栋3层机房', cpu: 0, memory: 0, disk: 58, responsible: '李婷', purchaseDate: '2023-06-20', warrantyDate: '2026-06-20', remark: '内存扩容中，预计4小时恢复' },
+        { id: 'DEV-0004', name: '核心交换机', type: '网络设备', status: 'online', ip: '192.168.1.1', location: 'A栋3层机房', cpu: 22, memory: 35, disk: 0, responsible: '王磊', purchaseDate: '2022-11-10', warrantyDate: '2025-11-10', remark: '三层交换，48口千兆+4口万兆' },
+        { id: 'DEV-0005', name: '汇聚交换机-1F', type: '网络设备', status: 'online', ip: '192.168.1.2', location: 'A栋1层弱电间', cpu: 15, memory: 28, disk: 0, responsible: '王磊', purchaseDate: '2022-11-10', warrantyDate: '2025-11-10', remark: '' },
+        { id: 'DEV-0006', name: '汇聚交换机-2F', type: '网络设备', status: 'fault', ip: '192.168.1.3', location: 'A栋2层弱电间', cpu: 98, memory: 92, disk: 0, responsible: '王磊', purchaseDate: '2022-11-10', warrantyDate: '2025-11-10', remark: '端口12-24异常，疑似硬件故障' },
+        { id: 'DEV-0007', name: '边界防火墙', type: '安全设备', status: 'online', ip: '10.0.0.1', location: 'A栋3层机房', cpu: 30, memory: 48, disk: 25, responsible: '赵刚', purchaseDate: '2023-01-08', warrantyDate: '2026-01-08', remark: '启用了IPS/AV/URL过滤策略' },
+        { id: 'DEV-0008', name: 'NAS存储阵列', type: '存储设备', status: 'online', ip: '192.168.1.50', location: 'A栋3层机房', cpu: 12, memory: 40, disk: 83, responsible: '李婷', purchaseDate: '2022-08-25', warrantyDate: '2025-08-25', remark: 'RAID6，总容量120TB，已用约100TB' },
+        { id: 'DEV-0009', name: '备份服务器', type: '服务器', status: 'online', ip: '192.168.1.13', location: 'B栋1层机房', cpu: 8, memory: 30, disk: 65, responsible: '李婷', purchaseDate: '2023-09-01', warrantyDate: '2026-09-01', remark: '每日凌晨2:00自动备份' },
+        { id: 'DEV-0010', name: '无线控制器', type: '网络设备', status: 'online', ip: '192.168.1.5', location: 'A栋3层机房', cpu: 18, memory: 25, disk: 0, responsible: '王磊', purchaseDate: '2023-05-12', warrantyDate: '2026-05-12', remark: '管理全楼32个AP' },
+        { id: 'DEV-0011', name: '开发终端-01', type: '终端设备', status: 'online', ip: '192.168.10.101', location: 'B栋2层办公区', cpu: 55, memory: 72, disk: 48, responsible: '陈宇', purchaseDate: '2024-01-15', warrantyDate: '2027-01-15', remark: '' },
+        { id: 'DEV-0012', name: '开发终端-02', type: '终端设备', status: 'offline', ip: '192.168.10.102', location: 'B栋2层办公区', cpu: 0, memory: 0, disk: 35, responsible: '刘洋', purchaseDate: '2024-01-15', warrantyDate: '2027-01-15', remark: '员工离职，已收回' },
+        { id: 'DEV-0013', name: '温湿度传感器组', type: 'IoT设备', status: 'online', ip: '192.168.20.1', location: 'A栋3层机房', cpu: 0, memory: 0, disk: 0, responsible: '张明', purchaseDate: '2023-08-20', warrantyDate: '2025-08-20', remark: '4个传感器节点，接入MQTT' },
+        { id: 'DEV-0014', name: 'UPS不间断电源', type: 'IoT设备', status: 'online', ip: '192.168.20.10', location: 'A栋3层机房', cpu: 0, memory: 0, disk: 0, responsible: '张明', purchaseDate: '2022-05-18', warrantyDate: '2027-05-18', remark: '30KVA，当前负载62%' },
+        { id: 'DEV-0015', name: '入侵检测系统', type: '安全设备', status: 'offline', ip: '10.0.0.2', location: 'A栋3层机房', cpu: 0, memory: 0, disk: 0, responsible: '赵刚', purchaseDate: '2023-04-10', warrantyDate: '2026-04-10', remark: '系统升级中，暂时离线' },
+        { id: 'DEV-0016', name: 'VPN网关', type: '安全设备', status: 'online', ip: '10.0.0.5', location: 'A栋3层机房', cpu: 25, memory: 38, disk: 15, responsible: '赵刚', purchaseDate: '2023-07-22', warrantyDate: '2026-07-22', remark: '支持IPSec和SSL VPN' },
+        { id: 'DEV-0017', name: '视频监控服务器', type: '服务器', status: 'fault', ip: '192.168.1.14', location: 'A栋1层弱电间', cpu: 0, memory: 0, disk: 90, responsible: '王磊', purchaseDate: '2021-12-01', warrantyDate: '2024-12-01', remark: '硬盘故障，已过保，待采购替换' },
+        { id: 'DEV-0018', name: '会议室显示终端', type: '终端设备', status: 'online', ip: '192.168.10.200', location: 'B栋3层会议室', cpu: 10, memory: 20, disk: 15, responsible: '行政部', purchaseDate: '2024-03-10', warrantyDate: '2027-03-10', remark: '75寸智能会议屏' },
+    ];
+
+    let alerts = [
+        { id: 'ALT-001', deviceId: 'DEV-0006', level: 'critical', title: '汇聚交换机-2F 端口异常', message: '端口12-24状态异常，CPU利用率98%，疑似硬件故障，请立即处理。', time: '2024-06-15 09:23:15', handled: false },
+        { id: 'ALT-002', deviceId: 'DEV-0017', level: 'critical', title: '视频监控服务器 硬盘故障', message: '硬盘SMART检测异常，磁盘使用率90%，设备已停机，已过保修期。', time: '2024-06-15 08:45:30', handled: false },
+        { id: 'ALT-003', deviceId: 'DEV-0008', level: 'warning', title: 'NAS存储阵列 容量告警', message: '磁盘使用率达到83%，剩余空间约20TB，建议及时扩容或清理。', time: '2024-06-15 07:10:00', handled: false },
+        { id: 'ALT-004', deviceId: 'DEV-0003', level: 'info', title: '应用服务器-B 进入维护', message: '设备由管理员李婷手动设置为维护状态，原因：内存扩容。', time: '2024-06-14 22:00:00', handled: true },
+        { id: 'ALT-005', deviceId: 'DEV-0015', level: 'info', title: '入侵检测系统 计划离线', message: '系统版本升级中，预计6月16日恢复在线。', time: '2024-06-14 20:30:00', handled: true },
+        { id: 'ALT-006', deviceId: 'DEV-0012', level: 'warning', title: '开发终端-02 已离线', message: '设备已离线超过24小时，已确认员工离职设备回收。', time: '2024-06-14 09:15:00', handled: true },
+    ];
+
+    // ==================== 状态 ====================
+    let currentPage = 'dashboard';
+    let currentDetailDevice = null;
+    let deleteTargetId = null;
+    let chartInstances = {};
+    let searchQuery = '';
+    let filterType = '';
+    let filterStatus = '';
+
+    // ==================== 工具函数 ====================
+    const statusMap = { online: '在线', offline: '离线', maintenance: '维护中', fault: '故障' };
+    const statusClassMap = { online: 'status-online', offline: 'status-offline', maintenance: 'status-maintenance', fault: 'status-fault' };
+    const typeIconMap = {
+        '服务器': 'fa-server', '网络设备': 'fa-network-wired', '终端设备': 'fa-desktop',
+        '存储设备': 'fa-hard-drive', '安全设备': 'fa-shield-halved', 'IoT设备': 'fa-microchip'
+    };
+
+    function getFilteredDevices() {
+        return devices.filter(d => {
+            const q = searchQuery.toLowerCase();
+            const matchSearch = !q || d.name.toLowerCase().includes(q) || d.ip.includes(q) || d.id.toLowerCase().includes(q);
+            const matchType = !filterType || d.type === filterType;
+            const matchStatus = !filterStatus || d.status === filterStatus;
+            return matchSearch && matchType && matchStatus;
+        });
+    }
+
+    function getStats() {
+        const total = devices.length;
+        const online = devices.filter(d => d.status === 'online').length;
+        const offline = devices.filter(d => d.status === 'offline').length;
+        const maintenance = devices.filter(d => d.status === 'maintenance').length;
+        const fault = devices.filter(d => d.status === 'fault').length;
+        const unhandledAlerts = alerts.filter(a => !a.handled).length;
+        return { total, online, offline, maintenance, fault, unhandledAlerts };
+    }
+
+    function generateDeviceId() {
+        const maxNum = devices.reduce((max, d) => {
+            const num = parseInt(d.id.split('-')[1]);
+            return num > max ? num : max;
+        }, 0);
+        return 'DEV-' + String(maxNum + 1).padStart(4, '0');
+    }
+
+    function getUsageColor(val) {
+        if (val >= 90) return 'var(--danger)';
+        if (val >= 70) return 'var(--warning)';
+        return 'var(--accent)';
+    }
+
+    // ==================== Toast ====================
+    function showToast(msg, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `<i class="fas ${icon}"></i>${msg}`;
+        container.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(40px)'; toast.style.transition = 'all 0.3s ease'; }, 2500);
+        setTimeout(() => toast.remove(), 2800);
+    }
+
+    // ==================== 页面切换 ====================
+    function switchPage(page) {
+        currentPage = page;
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.page === page);
+        });
+        // 销毁旧图表
+        Object.values(chartInstances).forEach(c => c.destroy());
+        chartInstances = {};
+        renderPage();
+    }
+
+    function renderPage() {
+        const area = document.getElementById('contentArea');
+        switch (currentPage) {
+            case 'dashboard': area.innerHTML = renderDashboard(); initDashboardCharts(); break;
+            case 'devices': area.innerHTML = renderDevices(); break;
+            case 'alerts': area.innerHTML = renderAlerts(); break;
+            case 'topology': area.innerHTML = renderTopology(); break;
+            case 'settings': area.innerHTML = renderSettings(); break;
+        }
+        updateAlertBadge();
+    }
+
+    // ==================== 控制台 ====================
+    function renderDashboard() {
+        const stats = getStats();
+        const recentAlerts = alerts.filter(a => !a.handled).slice(0, 4);
+        const recentDevices = devices.slice(0, 6);
+        return `
+        <div class="space-y-6">
+            <div class="flex items-end justify-between">
+                <div>
+                    <h1 class="font-display font-bold text-2xl tracking-tight">控制台</h1>
+                    <p class="text-xs mt-1" style="color: var(--fg-muted);">设备运行状态总览</p>
+                </div>
+            </div>
+
+            <!-- 统计卡片 -->
+            <div class="grid grid-cols-5 gap-4">
+                <div class="stat-card fade-in stagger-1" style="--glow: var(--accent);">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold" style="color: var(--fg-muted);">设备总数</span>
+                        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--accent-dim);">
+                            <i class="fas fa-cubes text-xs" style="color: var(--accent);"></i>
+                        </div>
+                    </div>
+                    <div class="font-display font-bold text-3xl">${stats.total}</div>
+                    <div class="text-[11px] mt-1" style="color: var(--fg-dim);">已注册设备</div>
+                </div>
+                <div class="stat-card fade-in stagger-2">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold" style="color: var(--fg-muted);">在线设备</span>
+                        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--accent-dim);">
+                            <i class="fas fa-signal text-xs" style="color: var(--accent);"></i>
+                        </div>
+                    </div>
+                    <div class="font-display font-bold text-3xl" style="color: var(--accent);">${stats.online}</div>
+                    <div class="text-[11px] mt-1" style="color: var(--fg-dim);">正常运行</div>
+                </div>
+                <div class="stat-card fade-in stagger-3">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold" style="color: var(--fg-muted);">离线设备</span>
+                        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: rgba(124,130,154,0.12);">
+                            <i class="fas fa-power-off text-xs" style="color: var(--fg-muted);"></i>
+                        </div>
+                    </div>
+                    <div class="font-display font-bold text-3xl" style="color: var(--fg-muted);">${stats.offline}</div>
+                    <div class="text-[11px] mt-1" style="color: var(--fg-dim);">当前离线</div>
+                </div>
+                <div class="stat-card fade-in stagger-3">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold" style="color: var(--fg-muted);">维护中</span>
+                        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--warning-dim);">
+                            <i class="fas fa-wrench text-xs" style="color: var(--warning);"></i>
+                        </div>
+                    </div>
+                    <div class="font-display font-bold text-3xl" style="color: var(--warning);">${stats.maintenance}</div>
+                    <div class="text-[11px] mt-1" style="color: var(--fg-dim);">计划维护</div>
+                </div>
+                <div class="stat-card fade-in stagger-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold" style="color: var(--fg-muted);">故障设备</span>
+                        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--danger-dim);">
+                            <i class="fas fa-exclamation-triangle text-xs" style="color: var(--danger);"></i>
+                        </div>
+                    </div>
+                    <div class="font-display font-bold text-3xl" style="color: var(--danger);">${stats.fault}</div>
+                    <div class="text-[11px] mt-1" style="color: var(--fg-dim);">需要处理</div>
+                </div>
+            </div>
+
+            <!-- 图表区 -->
+            <div class="grid grid-cols-3 gap-4">
+                <div class="stat-card fade-in stagger-2" style="padding: 16px;">
+                    <div class="text-xs font-semibold mb-3" style="color: var(--fg-muted);">设备状态分布</div>
+                    <div style="height: 200px; display: flex; align-items: center; justify-content: center;">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+                <div class="stat-card fade-in stagger-3" style="padding: 16px;">
+                    <div class="text-xs font-semibold mb-3" style="color: var(--fg-muted);">设备类型统计</div>
+                    <div style="height: 200px;">
+                        <canvas id="typeChart"></canvas>
+                    </div>
+                </div>
+                <div class="stat-card fade-in stagger-4" style="padding: 16px;">
+                    <div class="text-xs font-semibold mb-3" style="color: var(--fg-muted);">资源使用 TOP5</div>
+                    <div style="height: 200px;">
+                        <canvas id="resourceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 下方双栏 -->
+            <div class="grid grid-cols-5 gap-4">
+                <!-- 最近告警 -->
+                <div class="col-span-3 stat-card fade-in stagger-3" style="padding: 16px;">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="text-xs font-semibold" style="color: var(--fg-muted);">未处理告警</div>
+                        <span class="text-[11px] cursor-pointer font-medium" style="color: var(--accent);" onclick="switchPage('alerts')">查看全部 <i class="fas fa-arrow-right text-[10px]"></i></span>
+                    </div>
+                    ${recentAlerts.length === 0 ? '<div class="text-center py-8 text-xs" style="color: var(--fg-dim);">暂无未处理告警</div>' :
+                    recentAlerts.map(a => `
+                        <div class="alert-card alert-${a.level} mb-2">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <div class="text-xs font-semibold">${a.title}</div>
+                                    <div class="text-[11px] mt-1" style="color: var(--fg-muted);">${a.message}</div>
+                                </div>
+                                <span class="text-[10px] whitespace-nowrap ml-3" style="color: var(--fg-dim);">${a.time.split(' ')[1]}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <!-- 设备快速列表 -->
+                <div class="col-span-2 stat-card fade-in stagger-4" style="padding: 16px;">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="text-xs font-semibold" style="color: var(--fg-muted);">设备快速浏览</div>
+                        <span class="text-[11px] cursor-pointer font-medium" style="color: var(--accent);" onclick="switchPage('devices')">全部设备 <i class="fas fa-arrow-right text-[10px]"></i></span>
+                    </div>
+                    <div class="space-y-2">
+                        ${recentDevices.map(d => `
+                            <div class="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors" style="background: transparent;" onmouseenter="this.style.background='rgba(255,255,255,0.03)'" onmouseleave="this.style.background='transparent'" onclick="openDetailPanel('${d.id}')">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style="background: var(--accent-dim);">
+                                    <i class="fas ${typeIconMap[d.type] || 'fa-cube'} text-[11px]" style="color: var(--accent);"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-xs font-semibold truncate">${d.name}</div>
+                                    <div class="text-[11px]" style="color: var(--fg-dim);">${d.ip}</div>
+                                </div>
+                                <span class="status-badge ${statusClassMap[d.status]}"><span class="dot"></span>${statusMap[d.status]}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function initDashboardCharts() {
+        const stats = getStats();
+        // 状态饼图
+        const statusCtx = document.getElementById('statusChart');
+        if (statusCtx) {
+            chartInstances.status = new Chart(statusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['在线', '离线', '维护中', '故障'],
+                    datasets: [{
+                        data: [stats.online, stats.offline, stats.maintenance, stats.fault],
+                        backgroundColor: ['#00d4aa', '#6b7280', '#ffb020', '#ff4d6a'],
+                        borderWidth: 0, spacing: 3, borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#7c829a', font: { size: 11, family: 'Noto Sans SC' }, padding: 12, usePointStyle: true, pointStyleWidth: 8 } }
+                    }
+                }
+            });
+        }
+
+        // 类型柱状图
+        const typeCtx = document.getElementById('typeChart');
+        if (typeCtx) {
+            const types = ['服务器', '网络设备', '终端设备', '存储设备', '安全设备', 'IoT设备'];
+            const typeCounts = types.map(t => devices.filter(d => d.type === t).length);
+            chartInstances.type = new Chart(typeCtx, {
+                type: 'bar',
+                data: {
+                    labels: types,
+                    datasets: [{
+                        data: typeCounts,
+                        backgroundColor: 'rgba(0,212,170,0.6)',
+                        hoverBackgroundColor: 'rgba(0,212,170,0.8)',
+                        borderRadius: 6, barThickness: 22,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#4a5068', font: { size: 10, family: 'Noto Sans SC' } } },
+                        y: { grid: { color: 'rgba(37,42,58,0.5)' }, ticks: { color: '#4a5068', font: { size: 10 }, stepSize: 1 }, beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        // 资源TOP5
+        const resCtx = document.getElementById('resourceChart');
+        if (resCtx) {
+            const servers = devices.filter(d => d.type === '服务器' && d.status === 'online').sort((a, b) => b.cpu + b.memory + b.disk - (a.cpu + a.memory + a.disk)).slice(0, 5);
+            chartInstances.resource = new Chart(resCtx, {
+                type: 'bar',
+                data: {
+                    labels: servers.map(s => s.name.length > 6 ? s.name.slice(0, 6) + '..' : s.name),
+                    datasets: [
+                        { label: 'CPU', data: servers.map(s => s.cpu), backgroundColor: '#00d4aa', borderRadius: 4, barThickness: 10 },
+                        { label: '内存', data: servers.map(s => s.memory), backgroundColor: '#3b9eff', borderRadius: 4, barThickness: 10 },
+                        { label: '磁盘', data: servers.map(s => s.disk), backgroundColor: '#ffb020', borderRadius: 4, barThickness: 10 },
+                    ]
+                },
+                options: {
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { color: '#7c829a', font: { size: 10, family: 'Noto Sans SC' }, padding: 10, usePointStyle: true, pointStyleWidth: 8 } } },
+                    scales: {
+                        x: { grid: { color: 'rgba(37,42,58,0.5)' }, ticks: { color: '#4a5068', font: { size: 10 } }, max: 100 },
+                        y: { grid: { display: false }, ticks: { color: '#7c829a', font: { size: 10, family: 'Noto Sans SC' } } }
+                    }
+                }
+            });
+        }
+    }
+
+    // ==================== 设备管理 ====================
+    function renderDevices() {
+        const filtered = getFilteredDevices();
+        const types = [...new Set(devices.map(d => d.type))];
+        return `
+        <div class="space-y-5">
+            <div class="flex items-end justify-between">
+                <div>
+                    <h1 class="font-display font-bold text-2xl tracking-tight">设备管理</h1>
+                    <p class="text-xs mt-1" style="color: var(--fg-muted);">共 ${devices.length} 台设备，当前显示 ${filtered.length} 台</p>
+                </div>
+                <button class="btn-primary" onclick="openAddDeviceModal()"><i class="fas fa-plus"></i>添加设备</button>
+            </div>
+
+            <!-- 筛选栏 -->
+            <div class="flex items-center gap-3">
+                <div class="search-box flex-1 max-w-[320px]">
+                    <i class="fas fa-search"></i>
+                    <input type="text" class="form-input" placeholder="搜索设备..." value="${searchQuery}" oninput="searchQuery=this.value; renderPage();">
+                </div>
+                <select class="form-select w-[140px]" onchange="filterType=this.value; renderPage();">
+                    <option value="">全部类型</option>
+                    ${types.map(t => `<option value="${t}" ${filterType === t ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+                <select class="form-select w-[140px]" onchange="filterStatus=this.value; renderPage();">
+                    <option value="">全部状态</option>
+                    <option value="online" ${filterStatus === 'online' ? 'selected' : ''}>在线</option>
+                    <option value="offline" ${filterStatus === 'offline' ? 'selected' : ''}>离线</option>
+                    <option value="maintenance" ${filterStatus === 'maintenance' ? 'selected' : ''}>维护中</option>
+                    <option value="fault" ${filterStatus === 'fault' ? 'selected' : ''}>故障</option>
+                </select>
+                ${(searchQuery || filterType || filterStatus) ? `<button class="btn-secondary text-xs py-2 px-3" onclick="searchQuery='';filterType='';filterStatus='';renderPage();"><i class="fas fa-times"></i>清除筛选</button>` : ''}
+            </div>
+
+            <!-- 表格 -->
+            <div class="stat-card fade-in" style="padding: 0; overflow: hidden;">
+                <div style="max-height: calc(100vh - 260px); overflow-y: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>设备信息</th>
+                                <th>类型</th>
+                                <th>IP 地址</th>
+                                <th>位置</th>
+                                <th>状态</th>
+                                <th>资源负载</th>
+                                <th>负责人</th>
+                                <th style="width: 80px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filtered.length === 0 ? `<tr><td colspan="8" class="text-center py-12" style="color: var(--fg-dim);"><i class="fas fa-inbox text-2xl mb-2 block"></i>没有找到匹配的设备</td></tr>` :
+                            filtered.map(d => `
+                                <tr onclick="openDetailPanel('${d.id}')">
+                                    <td>
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style="background: var(--accent-dim);">
+                                                <i class="fas ${typeIconMap[d.type] || 'fa-cube'} text-[11px]" style="color: var(--accent);"></i>
+                                            </div>
+                                            <div>
+                                                <div class="text-xs font-semibold">${d.name}</div>
+                                                <div class="text-[11px]" style="color: var(--fg-dim);">${d.id}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><span class="text-xs" style="color: var(--fg-muted);">${d.type}</span></td>
+                                    <td><code class="text-xs" style="color: var(--fg-muted); background: rgba(255,255,255,0.04); padding: 2px 6px; border-radius: 4px;">${d.ip || '-'}</code></td>
+                                    <td><span class="text-xs" style="color: var(--fg-muted);">${d.location || '-'}</span></td>
+                                    <td><span class="status-badge ${statusClassMap[d.status]}"><span class="dot"></span>${statusMap[d.status]}</span></td>
+                                    <td>
+                                        ${d.cpu > 0 || d.memory > 0 ? `
+                                        <div class="flex gap-2">
+                                            ${d.cpu > 0 ? `<div class="flex-1"><div class="text-[10px] mb-1" style="color: var(--fg-dim);">C ${d.cpu}%</div><div class="usage-bar"><div class="usage-bar-fill" style="width: ${d.cpu}%; background: ${getUsageColor(d.cpu)};"></div></div></div>` : ''}
+                                            ${d.memory > 0 ? `<div class="flex-1"><div class="text-[10px] mb-1" style="color: var(--fg-dim);">M ${d.memory}%</div><div class="usage-bar"><div class="usage-bar-fill" style="width: ${d.memory}%; background: ${getUsageColor(d.memory)};"></div></div></div>` : ''}
+                                        </div>` : '<span class="text-xs" style="color: var(--fg-dim);">-</span>'}
+                                    </td>
+                                    <td><span class="text-xs" style="color: var(--fg-muted);">${d.responsible || '-'}</span></td>
+                                    <td onclick="event.stopPropagation();">
+                                        <div class="flex items-center gap-1">
+                                            <button class="w-7 h-7 rounded-md flex items-center justify-center transition-colors" style="color: var(--fg-dim);" onmouseenter="this.style.background='rgba(255,255,255,0.06)';this.style.color='var(--fg)'" onmouseleave="this.style.background='transparent';this.style.color='var(--fg-dim)'" onclick="openEditDeviceModal('${d.id}')" title="编辑"><i class="fas fa-pen text-[11px]"></i></button>
+                                            <button class="w-7 h-7 rounded-md flex items-center justify-center transition-colors" style="color: var(--fg-dim);" onmouseenter="this.style.background='var(--danger-dim)';this.style.color='var(--danger)'" onmouseleave="this.style.background='transparent';this.style.color='var(--fg-dim)'" onclick="openDeleteModal('${d.id}')" title="删除"><i class="fas fa-trash text-[11px]"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // ==================== 告警中心 ====================
+    function renderAlerts() {
+        const unhandled = alerts.filter(a => !a.handled);
+        const handled = alerts.filter(a => a.handled);
+        return `
+        <div class="space-y-5">
+            <div class="flex items-end justify-between">
+                <div>
+                    <h1 class="font-display font-bold text-2xl tracking-tight">告警中心</h1>
+                    <p class="text-xs mt-1" style="color: var(--fg-muted);">${unhandled.length} 条未处理 / ${handled.length} 条已处理</p>
+                </div>
+                <button class="btn-secondary text-xs" onclick="handleAllAlerts()"><i class="fas fa-check-double"></i>全部标记已处理</button>
+            </div>
+
+            ${unhandled.length > 0 ? `
+            <div>
+                <div class="text-xs font-semibold mb-3" style="color: var(--danger);"><i class="fas fa-exclamation-circle mr-1"></i>未处理告警 (${unhandled.length})</div>
+                <div class="space-y-2">
+                    ${unhandled.map(a => renderAlertCard(a)).join('')}
+                </div>
+            </div>` : ''}
+
+            <div>
+                <div class="text-xs font-semibold mb-3" style="color: var(--fg-dim);"><i class="fas fa-check-circle mr-1"></i>已处理告警 (${handled.length})</div>
+                <div class="space-y-2">
+                    ${handled.length === 0 ? '<div class="text-center py-8 text-xs" style="color: var(--fg-dim);">暂无已处理告警</div>' : handled.map(a => renderAlertCard(a)).join('')}
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function renderAlertCard(a) {
+        const levelText = { critical: '严重', warning: '警告', info: '提示' };
+        const levelColor = { critical: 'var(--danger)', warning: 'var(--warning)', info: 'var(--info)' };
+        const levelBg = { critical: 'var(--danger-dim)', warning: 'var(--warning-dim)', info: 'var(--info-dim)' };
+        return `
+        <div class="alert-card alert-${a.level} ${a.handled ? 'opacity-50' : ''}">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded" style="background: ${levelBg[a.level]}; color: ${levelColor[a.level]};">${levelText[a.level]}</span>
+                        <span class="text-xs font-semibold">${a.title}</span>
+                    </div>
+                    <div class="text-[11px] mb-2" style="color: var(--fg-muted);">${a.message}</div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px]" style="color: var(--fg-dim);"><i class="fas fa-clock mr-1"></i>${a.time}</span>
+                        <span class="text-[10px]" style="color: var(--fg-dim);"><i class="fas fa-link mr-1"></i>${a.deviceId}</span>
+                    </div>
+                </div>
+                ${!a.handled ? `<button class="btn-secondary text-[11px] py-1.5 px-3 ml-3 flex-shrink-0" onclick="handleAlert('${a.id}')"><i class="fas fa-check"></i>处理</button>` : `<span class="text-[11px] flex-shrink-0 ml-3" style="color: var(--accent);"><i class="fas fa-check-circle mr-1"></i>已处理</span>`}
+            </div>
+        </div>`;
+    }
+
+    function handleAlert(id) {
+        const alert = alerts.find(a => a.id === id);
+        if (alert) { alert.handled = true; showToast('告警已标记为已处理'); renderPage(); }
+    }
+
+    function handleAllAlerts() {
+        alerts.forEach(a => a.handled = true);
+        showToast('全部告警已标记为已处理');
+        renderPage();
+    }
+
+    // ==================== 拓扑视图 ====================
+    function renderTopology() {
+        const types = [...new Set(devices.map(d => d.type))];
+        const colorMap = { '服务器': '#00d4aa', '网络设备': '#3b9eff', '终端设备': '#a78bfa', '存储设备': '#ffb020', '安全设备': '#ff4d6a', 'IoT设备': '#f472b6' };
+        return `
+        <div class="space-y-5">
+            <div>
+                <h1 class="font-display font-bold text-2xl tracking-tight">拓扑视图</h1>
+                <p class="text-xs mt-1" style="color: var(--fg-muted);">按设备类型分组的网络拓扑概览</p>
+            </div>
+            <div class="stat-card" style="padding: 24px; min-height: 500px;">
+                <div style="display: flex; flex-wrap: wrap; gap: 32px; justify-content: center; align-items: flex-start; padding: 20px 0;">
+                    ${types.map(type => {
+                        const groupDevices = devices.filter(d => d.type === type);
+                        const color = colorMap[type] || '#00d4aa';
+                        return `
+                        <div style="text-align: center; min-width: 160px;">
+                            <div style="width: 56px; height: 56px; border-radius: 14px; margin: 0 auto 10px; display: flex; align-items: center; justify-content: center; background: ${color}20; border: 2px solid ${color}40;">
+                                <i class="fas ${typeIconMap[type]}" style="font-size: 20px; color: ${color};"></i>
+                            </div>
+                            <div class="text-xs font-semibold mb-1">${type}</div>
+                            <div class="text-[11px] mb-3" style="color: var(--fg-dim);">${groupDevices.length} 台</div>
+                            <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;">
+                                ${groupDevices.map(d => `
+                                    <div class="cursor-pointer px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); color: var(--fg-muted); min-width: 120px;" onmouseenter="this.style.borderColor='${color}40'; this.style.color='var(--fg)'" onmouseleave="this.style.borderColor='var(--border)'; this.style.color='var(--fg-muted)'" onclick="openDetailPanel('${d.id}')">
+                                        <span class="inline-block w-1.5 h-1.5 rounded-full mr-1.5" style="background: ${d.status === 'online' ? '#00d4aa' : d.status === 'fault' ? '#ff4d6a' : d.status === 'maintenance' ? '#ffb020' : '#6b7280'}; ${d.status === 'fault' ? 'box-shadow: 0 0 6px #ff4d6a;' : ''}"></span>
+                                        ${d.name.length > 8 ? d.name.slice(0, 8) + '..' : d.name}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <!-- 连线说明 -->
+                <div class="mt-6 pt-4 border-t flex items-center justify-center gap-6" style="border-color: var(--border);">
+                    <div class="flex items-center gap-2 text-[11px]" style="color: var(--fg-dim);"><span class="w-3 h-0.5 rounded" style="background: var(--accent); display: inline-block;"></span>核心链路</div>
+                    <div class="flex items-center gap-2 text-[11px]" style="color: var(--fg-dim);"><span class="w-3 h-0.5 rounded" style="background: var(--info); display: inline-block;"></span>接入链路</div>
+                    <div class="flex items-center gap-2 text-[11px]" style="color: var(--fg-dim);"><span class="w-3 h-0.5 rounded" style="background: var(--fg-dim); display: inline-block; border-top: 1px dashed var(--fg-dim); height: 0;"></span>无线链路</div>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // ==================== 系统设置 ====================
+    function renderSettings() {
+        return `
+        <div class="space-y-5" style="max-width: 640px;">
+            <div>
+                <h1 class="font-display font-bold text-2xl tracking-tight">系统设置</h1>
+                <p class="text-xs mt-1" style="color: var(--fg-muted);">配置设备管理平台参数</p>
+            </div>
+
+            <div class="stat-card" style="padding: 20px;">
+                <div class="text-xs font-semibold mb-4" style="color: var(--fg-muted);">告警阈值</div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="flex items-center justify-between text-xs mb-1.5">
+                            <span>CPU 使用率告警阈值</span>
+                            <span class="font-display font-bold" style="color: var(--accent);" id="cpuThVal">85%</span>
+                        </label>
+                        <input type="range" min="50" max="100" value="85" class="w-full" style="accent-color: var(--accent);" oninput="document.getElementById('cpuThVal').textContent=this.value+'%'">
+                    </div>
+                    <div>
+                        <label class="flex items-center justify-between text-xs mb-1.5">
+                            <span>内存使用率告警阈值</span>
+                            <span class="font-display font-bold" style="color: var(--accent);" id="memThVal">80%</span>
+                        </label>
+                        <input type="range" min="50" max="100" value="80" class="w-full" style="accent-color: var(--accent);" oninput="document.getElementById('memThVal').textContent=this.value+'%'">
+                    </div>
+                    <div>
+                        <label class="flex items-center justify-between text-xs mb-1.5">
+                            <span>磁盘使用率告警阈值</span>
+                            <span class="font-display font-bold" style="color: var(--accent);" id="diskThVal">90%</span>
+                        </label>
+                        <input type="range" min="50" max="100" value="90" class="w-full" style="accent-color: var(--accent);" oninput="document.getElementById('diskThVal').textContent=this.value+'%'">
+                    </div>
+                </div>
+            </div>
+
+            <div class="stat-card" style="padding: 20px;">
+                <div class="text-xs font-semibold mb-4" style="color: var(--fg-muted);">通知设置</div>
+                <div class="space-y-3">
+                    ${[
+                        ['设备离线告警', true],
+                        ['资源超限告警', true],
+                        ['设备状态变更通知', false],
+                        ['每日设备巡检报告', false],
+                    ].map(([label, checked]) => `
+                        <label class="flex items-center justify-between cursor-pointer py-1">
+                            <span class="text-xs">${label}</span>
+                            <div class="relative">
+                                <input type="checkbox" class="sr-only" ${checked ? 'checked' : ''} onchange="showToast('设置已更新')">
+                                <div class="w-9 h-5 rounded-full transition-colors" style="background: ${checked ? 'var(--accent)' : 'var(--border-light)'};" onclick="const cb=this.previousElementSibling; cb.checked=!cb.checked; this.style.background=cb.checked?'var(--accent)':'var(--border-light)'; showToast('设置已更新')">
+                                    <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform" style="transform: translateX(${checked ? '16px' : '0'});"></div>
+                                </div>
+                            </div>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+
+            <div class="stat-card" style="padding: 20px;">
+                <div class="text-xs font-semibold mb-4" style="color: var(--fg-muted);">数据维护</div>
+                <div class="flex gap-3">
+                    <button class="btn-secondary text-xs" onclick="exportData()"><i class="fas fa-download"></i>导出设备数据</button>
+                    <button class="btn-danger text-xs" onclick="showToast('演示环境不支持此操作', 'error')"><i class="fas fa-eraser"></i>清空所有数据</button>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function exportData() {
+        const dataStr = JSON.stringify(devices, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'devices_export.json'; a.click();
+        URL.revokeObjectURL(url);
+        showToast('设备数据已导出');
+    }
+
+    // ==================== 模态框操作 ====================
+    function openAddDeviceModal() {
+        document.getElementById('modalTitle').textContent = '添加设备';
+        document.getElementById('formSubmitBtn').textContent = '确认添加';
+        document.getElementById('formDeviceId').value = '';
+        document.getElementById('deviceForm').reset();
+        document.getElementById('formStatus').value = 'online';
+        document.getElementById('deviceModal').classList.add('active');
+    }
+
+    function openEditDeviceModal(id) {
+        const d = devices.find(dev => dev.id === id);
+        if (!d) return;
+        document.getElementById('modalTitle').textContent = '编辑设备';
+        document.getElementById('formSubmitBtn').textContent = '保存修改';
+        document.getElementById('formDeviceId').value = d.id;
+        document.getElementById('formName').value = d.name;
+        document.getElementById('formType').value = d.type;
+        document.getElementById('formIP').value = d.ip;
+        document.getElementById('formStatus').value = d.status;
+        document.getElementById('formLocation').value = d.location;
+        document.getElementById('formResponsible').value = d.responsible;
+        document.getElementById('formPurchaseDate').value = d.purchaseDate;
+        document.getElementById('formRemark').value = d.remark;
+        document.getElementById('deviceModal').classList.add('active');
+    }
+
+    function closeDeviceModal() {
+        document.getElementById('deviceModal').classList.remove('active');
+    }
+
+    function handleDeviceSubmit(e) {
+        e.preventDefault();
+        const id = document.getElementById('formDeviceId').value;
+        const data = {
+            name: document.getElementById('formName').value.trim(),
+            type: document.getElementById('formType').value,
+            ip: document.getElementById('formIP').value.trim(),
+            status: document.getElementById('formStatus').value,
+            location: document.getElementById('formLocation').value.trim(),
+            responsible: document.getElementById('formResponsible').value.trim(),
+            purchaseDate: document.getElementById('formPurchaseDate').value,
+            remark: document.getElementById('formRemark').value.trim(),
+        };
+
+        if (!data.name || !data.type) {
+            showToast('请填写必填字段', 'error');
+            return;
+        }
+
+        if (id) {
+            // 编辑
+            const idx = devices.findIndex(d => d.id === id);
+            if (idx !== -1) {
+                devices[idx] = { ...devices[idx], ...data };
+                showToast('设备信息已更新');
+                if (currentDetailDevice === id) {
+                    closeDetailPanel();
+                    setTimeout(() => openDetailPanel(id), 100);
+                }
+            }
+        } else {
+            // 新增
+            const newDevice = {
+                id: generateDeviceId(),
+                ...data,
+                cpu: 0, memory: 0, disk: 0,
+                warrantyDate: data.purchaseDate ? new Date(new Date(data.purchaseDate).getTime() + 3 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : '',
+            };
+            devices.unshift(newDevice);
+            showToast('设备添加成功');
+        }
+
+        closeDeviceModal();
+        renderPage();
+    }
+
+    // ==================== 删除 ====================
+    function openDeleteModal(id) {
+        deleteTargetId = id;
+        const d = devices.find(dev => dev.id === id);
+        document.getElementById('deleteConfirmText').textContent = `确定要删除设备「${d ? d.name : id}」吗？此操作不可恢复。`;
+        document.getElementById('deleteModal').classList.add('active');
+    }
+
+    function closeDeleteModal() {
+        document.getElementById('deleteModal').classList.remove('active');
+        deleteTargetId = null;
+    }
+
+    function confirmDelete() {
+        if (!deleteTargetId) return;
+        devices = devices.filter(d => d.id !== deleteTargetId);
+        if (currentDetailDevice === deleteTargetId) closeDetailPanel();
+        closeDeleteModal();
+        showToast('设备已删除');
+        renderPage();
+    }
+
+    // ==================== 详情面板 ====================
+    function openDetailPanel(id) {
+        const d = devices.find(dev => dev.id === id);
+        if (!d) return;
+        currentDetailDevice = id;
+        document.getElementById('detailEditBtn').onclick = () => { editDeviceFromDetail(); };
+
+        const hasResources = d.cpu > 0 || d.memory > 0 || d.disk > 0;
+        const deviceAlerts = alerts.filter(a => a.deviceId === id);
+
+        document.getElementById('detailContent').innerHTML = `
+        <div class="space-y-5">
+            <!-- 头部 -->
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center" style="background: var(--accent-dim);">
+                    <i class="fas ${typeIconMap[d.type] || 'fa-cube'} text-lg" style="color: var(--accent);"></i>
+                </div>
+                <div class="flex-1">
+                    <div class="font-display font-bold text-base">${d.name}</div>
+                    <div class="text-xs" style="color: var(--fg-dim);">${d.id} · ${d.type}</div>
+                </div>
+                <span class="status-badge ${statusClassMap[d.status]}"><span class="dot"></span>${statusMap[d.status]}</span>
+            </div>
+
+            <!-- 基本信息 -->
+            <div class="grid grid-cols-2 gap-x-6 gap-y-4 p-4 rounded-xl" style="background: var(--bg-secondary);">
+                <div>
+                    <div class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--fg-dim);">IP 地址</div>
+                    <div class="text-xs font-medium">${d.ip || '-'}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--fg-dim);">安装位置</div>
+                    <div class="text-xs font-medium">${d.location || '-'}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--fg-dim);">负责人</div>
+                    <div class="text-xs font-medium">${d.responsible || '-'}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--fg-dim);">购入日期</div>
+                    <div class="text-xs font-medium">${d.purchaseDate || '-'}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--fg-dim);">保修到期</div>
+                    <div class="text-xs font-medium">${d.warrantyDate || '-'}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--fg-dim);">设备类型</div>
+                    <div class="text-xs font-medium">${d.type}</div>
+                </div>
+            </div>
+
+            <!-- 资源监控 -->
+            ${hasResources ? `
+            <div>
+                <div class="text-xs font-semibold mb-3" style="color: var(--fg-muted);">资源监控</div>
+                <div class="space-y-3">
+                    ${d.cpu > 0 ? `
+                    <div>
+                        <div class="flex items-center justify-between text-xs mb-1.5">
+                            <span style="color: var(--fg-muted);">CPU 使用率</span>
+                            <span class="font-display font-bold" style="color: ${getUsageColor(d.cpu)};">${d.cpu}%</span>
+                        </div>
+                        <div class="usage-bar" style="height: 6px;"><div class="usage-bar-fill" style="width: ${d.cpu}%; background: ${getUsageColor(d.cpu)};"></div></div>
+                    </div>` : ''}
+                    ${d.memory > 0 ? `
+                    <div>
+                        <div class="flex items-center justify-between text-xs mb-1.5">
+                            <span style="color: var(--fg-muted);">内存使用率</span>
+                            <span class="font-display font-bold" style="color: ${getUsageColor(d.memory)};">${d.memory}%</span>
+                        </div>
+                        <div class="usage-bar" style="height: 6px;"><div class="usage-bar-fill" style="width: ${d.memory}%; background: ${getUsageColor(d.memory)};"></div></div>
+                    </div>` : ''}
+                    ${d.disk > 0 ? `
+                    <div>
+                        <div class="flex items-center justify-between text-xs mb-1.5">
+                            <span style="color: var(--fg-muted);">磁盘使用率</span>
+                            <span class="font-display font-bold" style="color: ${getUsageColor(d.disk)};">${d.disk}%</span>
+                        </div>
+                        <div class="usage-bar" style="height: 6px;"><div class="usage-bar-fill" style="width: ${d.disk}%; background: ${getUsageColor(d.disk)};"></div></div>
+                    </div>` : ''}
+                </div>
+            </div>` : ''}
+
+            <!-- 备注 -->
+            ${d.remark ? `
+            <div>
+                <div class="text-xs font-semibold mb-2" style="color: var(--fg-muted);">备注</div>
+                <div class="text-xs p-3 rounded-xl leading-relaxed" style="background: var(--bg-secondary); color: var(--fg-muted);">${d.remark}</div>
+            </div>` : ''}
+
+            <!-- 关联告警 -->
+            <div>
+                <div class="text-xs font-semibold mb-3" style="color: var(--fg-muted);">关联告警 (${deviceAlerts.length})</div>
+                ${deviceAlerts.length === 0 ? '<div class="text-[11px]" style="color: var(--fg-dim);">暂无关联告警</div>' :
+                deviceAlerts.map(a => `
+                    <div class="alert-card alert-${a.level} mb-2" style="padding: 12px;">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="text-[11px] font-semibold">${a.title}</div>
+                                <div class="text-[10px] mt-0.5" style="color: var(--fg-dim);">${a.time}</div>
+                            </div>
+                            <span class="text-[10px]" style="color: ${a.handled ? 'var(--accent)' : 'var(--danger)'};">${a.handled ? '已处理' : '未处理'}</span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>`;
+
+        document.getElementById('detailPanel').classList.add('active');
+        document.getElementById('detailOverlay').classList.add('active');
+    }
+
+    function closeDetailPanel() {
+        document.getElementById('detailPanel').classList.remove('active');
+        document.getElementById('detailOverlay').classList.remove('active');
+        currentDetailDevice = null;
+    }
+
+    function editDeviceFromDetail() {
+        if (!currentDetailDevice) return;
+        closeDetailPanel();
+        setTimeout(() => openEditDeviceModal(currentDetailDevice), 150);
+    }
+
+    // ==================== 全局搜索 ====================
+    function handleGlobalSearch(val) {
+        searchQuery = val;
+        if (currentPage !== 'devices') switchPage('devices');
+        else renderPage();
+    }
+
+    // ==================== 告警徽章 ====================
+    function updateAlertBadge() {
+        const count = alerts.filter(a => !a.handled).length;
+        const badge = document.getElementById('alertBadge');
+        const dot = document.getElementById('headerAlertDot');
+        if (count > 0) {
+            badge.style.display = 'inline';
+            badge.textContent = count;
+            dot.style.display = 'block';
+        } else {
+            badge.style.display = 'none';
+            dot.style.display = 'none';
+        }
+    }
+
+    // ==================== 时钟 ====================
+    function updateClock() {
+        const now = new Date();
+        const str = now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0') + ' ' +
+            String(now.getHours()).padStart(2, '0') + ':' +
+            String(now.getMinutes()).padStart(2, '0') + ':' +
+            String(now.getSeconds()).padStart(2, '0');
+        document.getElementById('currentTime').textContent = str;
+    }
+
+    // ==================== 模拟数据更新 ====================
+    function simulateDataUpdate() {
+        devices.forEach(d => {
+            if (d.status === 'online' && d.cpu > 0) {
+                d.cpu = Math.max(5, Math.min(99, d.cpu + Math.floor(Math.random() * 11) - 5));
+                d.memory = Math.max(5, Math.min(99, d.memory + Math.floor(Math.random() * 7) - 3));
+            }
+        });
+        // 如果当前在仪表盘，刷新图表数据
+        if (currentPage === 'dashboard' && chartInstances.resource) {
+            const servers = devices.filter(d => d.type === '服务器' && d.status === 'online').sort((a, b) => b.cpu + b.memory + b.disk - (a.cpu + a.memory + a.disk)).slice(0, 5);
+            chartInstances.resource.data.datasets[0].data = servers.map(s => s.cpu);
+            chartInstances.resource.data.datasets[1].data = servers.map(s => s.memory);
+            chartInstances.resource.data.datasets[2].data = servers.map(s => s.disk);
+            chartInstances.resource.data.labels = servers.map(s => s.name.length > 6 ? s.name.slice(0, 6) + '..' : s.name);
+            chartInstances.resource.update('none');
+        }
+        // 如果详情面板打开，更新资源数据
+        if (currentDetailDevice) openDetailPanel(currentDetailDevice);
+        // 如果在设备列表页面，更新进度条
+        if (currentPage === 'devices') renderPage();
+    }
+
+    // ==================== 键盘快捷键 ====================
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            closeDeviceModal();
+            closeDeleteModal();
+            closeDetailPanel();
+        }
+        // Ctrl+K 聚焦搜索
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            document.getElementById('globalSearch').focus();
+        }
+    });
+
+    // ==================== 初始化 ====================
+    updateClock();
+    setInterval(updateClock, 1000);
+    setInterval(simulateDataUpdate, 5000);
+    renderPage();
+    </script>
+</body>
+</html>
